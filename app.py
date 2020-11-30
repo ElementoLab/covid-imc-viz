@@ -7,18 +7,55 @@ import os
 import pathlib
 import re
   
+
 import base64
+
 from io import BytesIO as _BytesIO
+import requests, wget
 import dash
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 import dash_html_components as html
+from dash.dependencies import Input, Output, State
 import pandas as pd
 import numpy as np
 from PIL import Image
-from dash.dependencies import Input, Output, State
 import plotly.express as px
 import plotly.graph_objects as go
+import json
+
+# Image utility functions
+def pil_to_b64(im, enc_format='png', verbose=False, **kwargs):
+    """
+    Converts a PIL Image into base64 string for HTML displaying
+    :param im: PIL Image object
+    :param enc_format: The image format for displaying. If saved the image will have that extension.
+    :return: base64 encoding
+    """
+
+    buff = _BytesIO()
+    im.save(buff, format=enc_format, **kwargs)
+    encoded = base64.b64encode(buff.getvalue()).decode("utf-8")
+
+    return encoded
+
+def numpy_to_b64(np_array, enc_format='png', scalar=True, **kwargs):
+    """
+    Converts a numpy image into base 64 string for HTML displaying
+    :param np_array:
+    :param enc_format: The image format for displaying. If saved the image will have that extension.
+    :param scalar:
+    :return:
+    """
+    # Convert from 0-1 to 0-255
+    if scalar:
+        np_array = np.uint8(255 * np_array)
+    else:
+        np_array = np.uint8(np_array)
+
+    im_pil = Image.fromarray(np_array)
+
+    return pil_to_b64(im_pil, enc_format, **kwargs)
 
 # get ellipse around centroid for each groups
 def ellipse(x, y, n_std = 2, N = 100):
@@ -226,12 +263,13 @@ empty_fig = {'data': [],
                 }, template = "plotly_dark"
             )}
 
-
 # Initialize app
 app = dash.Dash(__name__,
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1.0"}]
 )
 server = app.server
+
+
 
 #### Load data ####
 APP_PATH = str(pathlib.Path(__file__).parent.resolve())
@@ -268,6 +306,24 @@ color_options = []
 for label in pcs.columns[63:-1]:
     color_options.append({"label":label, "value":label})
 
+'''
+with open('metadata/processed_stack.upload_info.json') as f:
+    roi2url = json.load(f)
+
+with open('metadata/processed_stack.channel_info.json') as f:
+    roi2channel = json.load(f)
+
+response = requests.get(roi2url["20200716_COVID_1_EARLY-07"]['shared_link'])
+response.raise_for_status()
+#data = np.load(_BytesIO(response.content))["HistoneH3(In113)"]
+#data = wget.download(roi2url["20200716_COVID_1_EARLY-07"]['shared_link'])
+print(response)
+print(_BytesIO(response.content))
+data = np.load(_BytesIO(response.content))["stack"]
+print(data.shape)
+'''
+
+# SideBar
 sidebar = html.Div(
     [
         html.H2("Image Navigator", className="display-4", style = {'margin-left':'5px'}),
@@ -309,6 +365,7 @@ sidebar = html.Div(
     style=SIDEBAR_STYLE,
 )
 
+# Main Content
 content = html.Div(
     id="root",
     children=[
@@ -342,7 +399,7 @@ content = html.Div(
                                 dcc.Graph(
                                     id='live-update-graph',
                                     figure=fig,
-                                    style={"width":"inherit", "height":"inherit"}
+                                    style={"width":"inherit", "height":"50vh", 'align':'center'}
                                 )
                             ], style={'height': '100%', 'overflow': 'contain'}
                         )
@@ -362,11 +419,8 @@ content = html.Div(
                                             "ROI Viewer (Click on the points to Load Images)"
                                         ),
                                         html.Hr(),
-                                        #html.P([
-                                        #    html.Pre(id="image-file-data")
-                                        #], style={"text-align":"center"})
                                         dcc.Graph(
-                                            id='image-file-data',
+                                            id='image-figure',
                                             figure=empty_fig,
                                             style={"width":"inherit", "height":"50vh", 'align':'center'}
                                         ),
@@ -421,7 +475,7 @@ def display_click_data(clickData):
 
 
 @app.callback(
-    Output('image-file-data', 'figure'),
+    Output('image-figure', 'figure'),
     [Input('live-update-graph', 'clickData'),
     Input('red', 'value'),
     Input('green', 'value'),
@@ -441,6 +495,7 @@ def display_image_data(clickData, redValue, greenValue, blueValue):
     ret = [img_name, red_channel, green_channel, blue_channel]
     img_names = os.listdir(img_dir)
 
+    #if img_name in roi2url.keys():
     if img_name in img_names:
         img = np.load(img_dir + img_name)
         output = np.zeros(shape=(3, img.shape[1], img.shape[2]))
@@ -453,6 +508,7 @@ def display_image_data(clickData, redValue, greenValue, blueValue):
     output = output.transpose((-1, 1, 0))
     if output.shape[0] > output.shape[1]:
         output = output.transpose((1, 0, 2))
+    encoded_image = numpy_to_b64(output)
     
     fig2 = px.imshow(output)
     fig2.update_layout(coloraxis_showscale=False)
