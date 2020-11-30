@@ -104,3 +104,8 @@ coverage.xml
 
 # Reserved files for comparison
 *RESERVE*
+
+
+venv
+.env
+data/images/*
