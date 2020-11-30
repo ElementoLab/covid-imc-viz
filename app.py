@@ -1,3 +1,8 @@
+# to dos
+# continuous color plot legend includes "trace 0"
+# customdata[x] showing for null data
+# 
+
 import os
 import pathlib
 import re
@@ -14,39 +19,6 @@ from PIL import Image
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 import plotly.graph_objects as go
-
-# Image utility functions
-def pil_to_b64(im, enc_format='png', verbose=False, **kwargs):
-    """
-    Converts a PIL Image into base64 string for HTML displaying
-    :param im: PIL Image object
-    :param enc_format: The image format for displaying. If saved the image will have that extension.
-    :return: base64 encoding
-    """
-
-    buff = _BytesIO()
-    im.save(buff, format=enc_format, **kwargs)
-    encoded = base64.b64encode(buff.getvalue()).decode("utf-8")
-
-    return encoded
-
-def numpy_to_b64(np_array, enc_format='png', scalar=True, **kwargs):
-    """
-    Converts a numpy image into base 64 string for HTML displaying
-    :param np_array:
-    :param enc_format: The image format for displaying. If saved the image will have that extension.
-    :param scalar:
-    :return:
-    """
-    # Convert from 0-1 to 0-255
-    if scalar:
-        np_array = np.uint8(255 * np_array)
-    else:
-        np_array = np.uint8(np_array)
-
-    im_pil = Image.fromarray(np_array)
-
-    return pil_to_b64(im_pil, enc_format, **kwargs)
 
 # get ellipse around centroid for each groups
 def ellipse(x, y, n_std = 2, N = 100):
@@ -74,8 +46,8 @@ def ellipse(x, y, n_std = 2, N = 100):
     return x, y
 
 
-hoverinfo = ['phenotypes', 'age', 'sex', 'race', 'hospitalization', 'lung_weight_grams', 'treated', 'days_of_disease', 'days_in_hospital', 'sample', 'roi']
-custom_hovertemplate = "<br>".join(["" + col + ":%{customdata[" + str(i) + "]}" for i, col in enumerate(hoverinfo)])
+hoverinfo = ['phenotypes', 'age', 'sex', 'race', 'hospitalization', 'lung_weight_grams', 'days_of_disease', 'days_in_hospital', 'sample', 'roi']
+custom_hovertemplate = "<br>".join(["" + col + ": %{customdata[" + str(i) + "]}" for i, col in enumerate(hoverinfo)]).replace("phenotypes", "Disease Group")
 
 # generate pca plot from pca df
 def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse = True, pca_loadings = None):
@@ -89,6 +61,11 @@ def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse 
             if target == "":
                 continue
 
+            customdata = group[hoverinfo]
+            numeric_col = customdata.select_dtypes("float64").columns
+            customdata.loc[:,numeric_col] = customdata.select_dtypes("float64").astype(str)
+            customdata = customdata.replace(["", "nan"], "NA", regex = False)
+
             fig.add_scatter(
                 x = group["0.00"],
                 y = group["1.00"],
@@ -97,7 +74,7 @@ def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse 
                 legendgroup = target,
                 marker_size = 12,
                 opacity = 0.7,
-                customdata = group[['phenotypes', 'age', 'sex', 'race', 'hospitalization', 'lung_weight_grams', 'treated', 'days_of_disease', 'days_in_hospital', 'sample', 'roi']],
+                customdata = customdata,
                 hovertemplate = custom_hovertemplate,
                 marker_color = colors[i])
 
@@ -138,7 +115,7 @@ def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse 
             legendgroup = target,
             marker_size = 12,
             opacity = 0.7,
-            customdata = group[['phenotypes', 'age', 'sex', 'race', 'hospitalization', 'lung_weight_grams', 'treated', 'days_of_disease', 'days_in_hospital', 'sample', 'roi']],
+            customdata = customdata,
             hovertemplate = custom_hovertemplate,
             marker_color = colors[i])
 
@@ -168,13 +145,19 @@ def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse 
             showlegend = False)
 
     else:
+        customdata = df[hoverinfo]
+        numeric_col = customdata.select_dtypes("float64").columns
+        customdata.loc[:,numeric_col] = customdata.select_dtypes("float64").astype(str)
+        customdata = customdata.replace(["", "nan"], "NA", regex = False)
+
         fig.add_scatter(
             x = df["0.00"],
             y = df["1.00"],
             mode = "markers",
             opacity = 0.7,
-            customdata = df[['phenotypes', 'age', 'sex', 'race', 'hospitalization', 'lung_weight_grams', 'treated', 'days_of_disease', 'days_in_hospital', 'sample', 'roi']],
+            customdata = customdata,
             hovertemplate = custom_hovertemplate,
+            showlegend = False,
             marker = dict(
                 size = 12,
                 color=df[label],
@@ -182,7 +165,7 @@ def plot_from_data(df, label = "phenotypes", draw_centroid = True, draw_ellipse 
                 colorscale="Viridis")
             )
 
-    if len(pca_loadings):
+    if pca_loadings is not None:
         for component in pca_loadings.index[:15]:
             fig.add_scatter(
                     x = [0, pca_loadings.loc[component]["0"]],
@@ -212,7 +195,7 @@ SIDEBAR_STYLE = {
     "top": 0,
     "left": 0,
     "bottom": 0,
-    "width": "40rem",
+    "width": "27rem",
     "padding": "2rem 1rem",
     "background-color": "#111111"#"
 }
@@ -220,10 +203,28 @@ SIDEBAR_STYLE = {
 # the styles for the main content position it to the right of the sidebar and
 # add some padding.
 CONTENT_STYLE = {
-    "margin-left": "44rem",
+    "margin-left": "30rem",
     "margin-right": "2rem",
     "padding": "2rem 1rem",
 }
+
+empty_fig = {'data': [],
+            'layout': go.Layout(
+                #width=1200,
+                #height=800,
+                xaxis={
+                    'showticklabels': False,
+                    'ticks': '',
+                    'showgrid': False,
+                    'zeroline': False
+                },
+                yaxis={
+                    'showticklabels': False,
+                    'ticks': '',
+                    'showgrid': False,
+                    'zeroline': False
+                }, template = "plotly_dark"
+            )}
 
 
 # Initialize app
@@ -361,6 +362,14 @@ content = html.Div(
                                             "ROI Viewer (Click on the points to Load Images)"
                                         ),
                                         html.Hr(),
+                                        #html.P([
+                                        #    html.Pre(id="image-file-data")
+                                        #], style={"text-align":"center"})
+                                        dcc.Graph(
+                                            id='image-file-data',
+                                            figure=empty_fig,
+                                            style={"width":"inherit", "height":"50vh", 'align':'center'}
+                                        ),
                                         html.Div([
                                             dcc.Markdown("""
                                                 **Hover Data**
@@ -374,11 +383,8 @@ content = html.Div(
                                                 Click on points in the graph.
                                                 """),
                                             html.Pre(id='click-data'),
-                                        ]),
-                                        html.P([
-                                            html.Pre(id="image-file-data")
-                                        ], style={"text-align":"center"})
-                                    ], style = {"overflow":"contain"}
+                                        ])
+                                    ], style={'height': '100%', 'overflow': 'contain'}
                                 )
                             ]
                         )
@@ -415,41 +421,46 @@ def display_click_data(clickData):
 
 
 @app.callback(
-    Output('image-file-data', 'children'),
+    Output('image-file-data', 'figure'),
     [Input('live-update-graph', 'clickData'),
     Input('red', 'value'),
     Input('green', 'value'),
     Input('blue', 'value')])
 def display_image_data(clickData, redValue, greenValue, blueValue):
+    img_dir = "assets/"
     if clickData == None:
-        return None
+        return empty_fig
     if 'customdata' not in clickData['points'][0]:
-        return 
+        return empty_fig
 
     img_name = clickData['points'][0]['customdata'][-1] + ".npy"
+    #print(img_name)
     red_channel = redValue
     green_channel = greenValue
     blue_channel = blueValue
     ret = [img_name, red_channel, green_channel, blue_channel]
-    img_names = os.listdir("data/images/")
+    img_names = os.listdir(img_dir)
 
     if img_name in img_names:
-        img = np.load("data/images/" + img_name)
+        img = np.load(img_dir + img_name)
         output = np.zeros(shape=(3, img.shape[1], img.shape[2]))
         output[0] = img[red_channel]
         output[1] = img[green_channel]
         output[2] = img[blue_channel]
+    else:
+        output = np.zeros(shape=(3, 1000, 1000))
 
-        output = output.transpose((-1, 1, 0))
-        if output.shape[0] > output.shape[1]:
-            output = output.transpose((1, 0, 2))
-        encoded_image = numpy_to_b64(output)
-        del output
-        htmlimg = html.Img(src='data:image/png;base64,{}'.format(encoded_image),
-            style = {'height': '100%', 'width': '50%', 'object-fit':'contain'})
-        return htmlimg
-        
-    return '\t'.join(["Image Does not exist. Metadata:"] + [str(x) for x in ret])
+    output = output.transpose((-1, 1, 0))
+    if output.shape[0] > output.shape[1]:
+        output = output.transpose((1, 0, 2))
+    
+    fig2 = px.imshow(output)
+    fig2.update_layout(coloraxis_showscale=False)
+    fig2.update_xaxes(showticklabels=False).update_yaxes(showticklabels=False)
+    fig2.update_layout(template = "plotly_dark")
+    
+    return fig2
+    
 
 # Multiple components can update everytime interval gets fired.
 @app.callback(Output('live-update-graph', 'figure'),

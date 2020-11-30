@@ -104,3 +104,8 @@ coverage.xml
 
 # Reserved files for comparison
 *RESERVE*
+
+# app related files / images
+venv
+data/images/*
+assets/*.npy
