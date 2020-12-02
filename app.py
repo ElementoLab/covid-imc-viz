@@ -2,7 +2,6 @@
 # 
 # Domain Rerouting
 # Image Redirection
-# Loading / Loaded UI
 
 import os
 import pathlib
@@ -532,7 +531,7 @@ content = html.Div(
                                                 dcc.Loading(
                                                     id="loading-2",
                                                     children=[html.Div([html.Div(id="loading-output-2")])],
-                                                    type="default",
+                                                    type="circle",
                                                 ),
                                             ]
                                         ),
@@ -570,7 +569,7 @@ def fetch_array(sample_name):
         res = requests.get(req_url)
         print("Download Completed: {} at {}".format(sample_name, datetime.datetime.now().strftime('%H:%M:%S')))
         
-        res.raise_for_status()
+        #res.raise_for_status()
 
         img = np.load(_BytesIO(res.content))["stack"]
 
@@ -615,9 +614,9 @@ def display_click_data(clickData):
 def display_image_data(clickData, redValue, greenValue, blueValue):
     # img_dir = "assets/"
     if clickData == None:
-        return empty_fig, "Click Any Points on PCA plot to load images"
+        return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
     if "customdata" not in clickData["points"][0]:
-        return empty_fig,  "Click Any Points on PCA plot to load images"
+        return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
 
     img_name = clickData["points"][0]["customdata"][-1]
     # print(img_name)
