@@ -1,8 +1,8 @@
 # to dos
 # 
-# Change Color Scheme
 # Domain Rerouting
 # Image Redirection
+# Loading / Loaded UI
 
 import os
 import pathlib
@@ -529,6 +529,11 @@ content = html.Div(
                                                 """
                                                 ),
                                                 html.Pre(id="click-data"),
+                                                dcc.Loading(
+                                                    id="loading-2",
+                                                    children=[html.Div([html.Div(id="loading-output-2")])],
+                                                    type="default",
+                                                ),
                                             ]
                                         ),
                                     ],
@@ -591,12 +596,15 @@ def display_click_data(clickData):
     if clickData == None:
         return None
     elif "customdata" in clickData["points"][0]:
-        return "LOADING: {}".format(clickData["points"][0]["customdata"][-1])
+        return "LOADED: {}".format(clickData["points"][0]["customdata"][-1])
     return
 
 # Image Loader Function
 @app.callback(
-    Output("image-file-data", "figure"),
+    [
+        Output("image-file-data", "figure"),
+        Output("loading-output-2", "children")
+    ],
     [
         Input("live-update-graph", "clickData"),
         Input("red", "value"),
@@ -607,9 +615,9 @@ def display_click_data(clickData):
 def display_image_data(clickData, redValue, greenValue, blueValue):
     # img_dir = "assets/"
     if clickData == None:
-        return empty_fig
+        return empty_fig, "Click Any Points on PCA plot to load images"
     if "customdata" not in clickData["points"][0]:
-        return empty_fig
+        return empty_fig,  "Click Any Points on PCA plot to load images"
 
     img_name = clickData["points"][0]["customdata"][-1]
     # print(img_name)
@@ -643,7 +651,7 @@ def display_image_data(clickData, redValue, greenValue, blueValue):
         template="plotly_dark"
     )
 
-    return fig2
+    return fig2, "loaded"
 '''
     if img_name in roi2url:
 
