@@ -1,7 +1,8 @@
 # to dos
 # 
 # Change Color Scheme
-# Caching for images
+# Domain Rerouting
+# Image Redirection
 
 import os
 import pathlib
@@ -27,6 +28,9 @@ import json
 
 from flask_caching import Cache
 import datetime
+
+
+pd.options.mode.chained_assignment = None
 
 # get ellipse around centroid for each groups
 def ellipse(x, y, n_std=2, N=100):
@@ -54,6 +58,181 @@ def ellipse(x, y, n_std=2, N=100):
     return x, y
 
 
+# generate pca plot from pca dataframe with metadata
+def plot_from_data(
+    df, color_map, label="Disease Group", draw_centroid=True, draw_ellipse=True, pca_loadings=None
+):
+    # create figure layout
+    fig = go.Figure()
+
+    # if label is categorical
+    if pd.api.types.is_object_dtype(df[label]) or pd.api.types.is_categorical(df[label]):
+        i = 0
+
+        # get color map
+        if label in color_map:
+            colors = color_map[label]
+        else:
+            colors = color_map["default"]
+
+        # iterate through each category
+        for target, group in df.groupby(label):
+            
+            # skip missing values
+            if target == "":
+                continue
+
+            # retrieve hoverinformation / roi information and fill empty values with empty string
+            customdata = group[hoverinfo]
+            numeric_col = customdata.select_dtypes("float64").columns
+            customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(
+                str
+            )
+            customdata = customdata.replace(["", "nan"], "NA", regex=False)
+
+            # add pca scatter plot
+            fig.add_scatter(
+                x=group['0'],
+                y=group['1'],
+                mode="markers",
+                name=str(target),
+                legendgroup=target,
+                marker_size=12,
+                opacity=0.7,
+                customdata=customdata,
+                hovertemplate=custom_hovertemplate,
+                marker_color=colors[i],
+            )
+
+            # add centroids
+            fig.add_scatter(
+                x=[group.mean()['0']],
+                y=[group.mean()['1']],
+                marker_symbol="cross",
+                mode="markers",
+                legendgroup=target,
+                customdata=None,
+                hoverinfo="skip",
+                marker_color="white",
+                marker_size = 8,
+                opacity = 0.7,
+                showlegend=False,
+            )
+
+            # add ellipse denoting 95% percent confidence covariance
+            x, y = ellipse(x=group['0'], y=group['1'])
+            fig.add_scatter(
+                x=x,
+                y=y,
+                mode="lines",
+                legendgroup=target,
+                customdata=None,
+                hoverinfo="skip",
+                marker_color=colors[i],
+                opacity = 0.15,
+                showlegend=False,
+            )
+            i = i + 1
+
+        # add missing values at the end
+        group = df[df[label] == ""]
+
+        if len(group) > 0:
+            target = "Unlabelled"
+            fig.add_scatter(
+                x=group['0'],
+                y=group['1'],
+                mode="markers",
+                name=str(target),
+                legendgroup=target,
+                marker_size = 12,
+                opacity = 0.7,
+                customdata=customdata,
+                hovertemplate=custom_hovertemplate,
+                marker_color="grey",
+            )
+
+            # add missing value centroid
+            fig.add_scatter(
+                x=[group.mean()['0']],
+                y=[group.mean()['1']],
+                marker_symbol="cross",
+                mode="markers",
+                legendgroup=target,
+                customdata=None,
+                hoverinfo="skip",
+                marker_color="white",
+                marker_size = 8,
+                opacity = 0.7,
+                showlegend=False,
+            )
+
+            # add ellipse denoting 95% percent confidence covariance for missing values
+            x, y = ellipse(x=group['0'], y=group['1'])
+            fig.add_scatter(
+                x=x,
+                y=y,
+                mode="lines",
+                legendgroup=target,
+                customdata=None,
+                hoverinfo="skip",
+                marker_color="grey",
+                opacity = 0.15,
+                showlegend=False,
+            )
+
+    else:
+        # if selected label is numeric
+
+        # get hoverinformation
+        customdata = df[hoverinfo]
+        numeric_col = customdata.select_dtypes("float64").columns
+        customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(str)
+        customdata = customdata.replace(["", "nan"], "NA", regex=False)
+
+        # add scatterplot and colorbar for values
+        fig.add_scatter(
+            x=df['0'],
+            y=df['1'],
+            mode="markers",
+            opacity=0.7,
+            customdata=customdata,
+            hovertemplate=custom_hovertemplate,
+            showlegend=False,
+            marker=dict(
+                size=12,
+                color=df[label],
+                colorbar=dict(title="Colorbar"),
+                colorscale="Viridis",
+            ),
+        )
+
+    # add pca loadings if provided
+    if pca_loadings is not None:
+        for component in pca_loadings.index[:15]:
+            fig.add_scatter(
+                x=[0, pca_loadings.loc[component]["0"]],
+                y=[0, pca_loadings.loc[component]["1"]],
+                mode="lines + markers",
+                marker_color="#e9fae3",
+                # hoverinfo='skip',
+                customdata=["-".join(component.split("-")[1:])],
+                name=component,
+                text=["Origin", component],
+                hovertemplate="%{text}",
+                opacity=0.2,
+                line={"dash": "dash"},
+                textposition="bottom center",
+                showlegend=False,
+            )
+
+    # add figure axis and theme
+    fig.update_layout(xaxis_title="PC1", yaxis_title="PC2", template="plotly_dark")
+
+    return fig
+
+
+# Decide Hover Information to Show
 hoverinfo = [
     "Disease Group",
     "age",
@@ -65,6 +244,7 @@ hoverinfo = [
     "roi",
 ]
 
+# Decide Labels to Use from Overall Dataframe
 col_interest = [
     'roi',
     '0',
@@ -94,161 +274,10 @@ col_interest = [
     'PMN %'
 ]
 
+# Hover Information Template
 custom_hovertemplate = "<br>".join(
     ["" + col.capitalize() + ": %{customdata[" + str(i) + "]}" for i, col in enumerate(hoverinfo)]
 )
-
-# generate pca plot from pca df
-def plot_from_data(
-    df, label="Disease Group", draw_centroid=True, draw_ellipse=True, pca_loadings=None
-):
-
-    fig = go.Figure()
-
-    if df[label].dtype == "object":
-        i = 0
-        for target, group in df.groupby(label):
-            # skip missing values
-            if target == "":
-                continue
-
-            customdata = group[hoverinfo]
-            numeric_col = customdata.select_dtypes("float64").columns
-            customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(
-                str
-            )
-            customdata = customdata.replace(["", "nan"], "NA", regex=False)
-
-            fig.add_scatter(
-                x=group['0'],
-                y=group['1'],
-                mode="markers",
-                name=str(target),
-                legendgroup=target,
-                marker_size=12,
-                opacity=0.7,
-                customdata=customdata,
-                hovertemplate=custom_hovertemplate,
-                marker_color=colors[i],
-            )
-
-            # add center
-            fig.add_scatter(
-                x=[group.mean()['0']],
-                y=[group.mean()['1']],
-                marker_symbol="cross",
-                mode="markers",
-                legendgroup=target,
-                customdata=None,
-                hoverinfo="skip",
-                marker_color="white",
-                marker_size = 8,
-                opacity = 0.7,
-                showlegend=False,
-            )
-
-            x, y = ellipse(x=group['0'], y=group['1'])
-            fig.add_scatter(
-                x=x,
-                y=y,
-                mode="lines",
-                legendgroup=target,
-                customdata=None,
-                hoverinfo="skip",
-                marker_color=colors[i],
-                opacity = 0.15,
-                showlegend=False,
-            )
-            i = i + 1
-
-        # add missing values
-        group = df[df[label] == ""]
-        target = "Unlabelled"
-        fig.add_scatter(
-            x=group['0'],
-            y=group['1'],
-            mode="markers",
-            name=str(target),
-            legendgroup=target,
-            marker_size = 12,
-            opacity = 0.7,
-            customdata=customdata,
-            hovertemplate=custom_hovertemplate,
-            marker_color=colors[i],
-        )
-
-        # add center
-        fig.add_scatter(
-            x=[group.mean()['0']],
-            y=[group.mean()['1']],
-            marker_symbol="cross",
-            mode="markers",
-            legendgroup=target,
-            customdata=None,
-            hoverinfo="skip",
-            marker_color="white",
-            marker_size = 8,
-            opacity = 0.7,
-            showlegend=False,
-        )
-
-        x, y = ellipse(x=group['0'], y=group['1'])
-        fig.add_scatter(
-            x=x,
-            y=y,
-            mode="lines",
-            legendgroup=target,
-            customdata=None,
-            hoverinfo="skip",
-            marker_color=colors[i],
-            opacity = 0.15,
-            showlegend=False,
-        )
-
-    else:
-        customdata = df[hoverinfo]
-        numeric_col = customdata.select_dtypes("float64").columns
-        customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(str)
-        customdata = customdata.replace(["", "nan"], "NA", regex=False)
-
-        fig.add_scatter(
-            x=df['0'],
-            y=df['1'],
-            mode="markers",
-            opacity=0.7,
-            customdata=customdata,
-            hovertemplate=custom_hovertemplate,
-            showlegend=False,
-            marker=dict(
-                size=12,
-                color=df[label],
-                colorbar=dict(title="Colorbar"),
-                colorscale="Viridis",
-            ),
-        )
-
-    if pca_loadings is not None:
-        for component in pca_loadings.index[:15]:
-            fig.add_scatter(
-                x=[0, pca_loadings.loc[component]["0"]],
-                y=[0, pca_loadings.loc[component]["1"]],
-                mode="lines + markers",
-                marker_color="#e9fae3",
-                # hoverinfo='skip',
-                customdata=["-".join(component.split("-")[1:])],
-                name=component,
-                text=["Origin", component],
-                hovertemplate="%{text}",
-                opacity=0.2,
-                line={"dash": "dash"},
-                textposition="bottom center",
-                showlegend=False,
-            )
-
-    fig.update_layout(xaxis_title="PC1", yaxis_title="PC2", template="plotly_dark")
-
-    return fig
-
 
 # the style arguments for the sidebar. We use position:fixed and a fixed width
 SIDEBAR_STYLE = {
@@ -258,7 +287,7 @@ SIDEBAR_STYLE = {
     "bottom": 0,
     "width": "27rem",
     "padding": "2rem 1rem",
-    "background-color": "#111111",  # "
+    "background-color": "#111111"
 }
 
 # the styles for the main content position it to the right of the sidebar and
@@ -269,6 +298,7 @@ CONTENT_STYLE = {
     "padding": "2rem 1rem",
 }
 
+# Empty Figure Layout
 empty_fig = {
     "data": [],
     "layout": go.Layout(
@@ -297,6 +327,8 @@ app = dash.Dash(
     ],
 )
 server = app.server
+
+# Add Cache to Server
 cache = Cache(server, config={
     'CACHE_TYPE': 'simple',
 
@@ -323,18 +355,36 @@ for col, dtype in zip(pcs.columns, pcs.dtypes):
 
 pcs = pcs.infer_objects()
 
-colors = (
+cat_order = {
+    "disease": ["Healthy", "FLU", "ARDS", "COVID19"],
+    "Disease Group": [
+        "Healthy",
+        "Flu",
+        "ARDS",
+        "Pneumonia",
+        "COVID19_early",
+        "COVID19_late",
+    ],
+}
+
+for cat, order in cat_order.items():
+    pcs[cat] = pd.Categorical(pcs[cat], categories=order, ordered=True)
+
+# color mapper
+color_map = dict()
+color_map["Disease Group"] = [px.colors.qualitative.D3[x] for x in [2,0,1,5,4,3]]
+color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2,0,1,3]] 
+color_map["default"] = (
     px.colors.qualitative.D3
     + px.colors.qualitative.G10
     + px.colors.qualitative.T10
     + px.colors.qualitative.Plotly
 )
 
-fig = plot_from_data(pcs, pca_loadings=loadings)
+fig = plot_from_data(pcs, color_map = color_map, pca_loadings = loadings)
 fig.update_layout(clickmode="event+select")
 
 # load options for dropdown box
-
 color_options = []
 for label in col_interest[3:]:
     color_options.append({"label": label.capitalize().replace("_"," "), "value": label})
@@ -504,6 +554,7 @@ content = html.Div(
 # App layout
 app.layout = html.Div([sidebar, content])
 
+# Cache Function
 @cache.memoize(timeout=300)
 def fetch_array(sample_name):
     if sample_name in roi2url:
@@ -543,7 +594,7 @@ def display_click_data(clickData):
         return "LOADING: {}".format(clickData["points"][0]["customdata"][-1])
     return
 
-
+# Image Loader Function
 @app.callback(
     Output("image-file-data", "figure"),
     [
@@ -612,7 +663,7 @@ def display_image_data(clickData, redValue, greenValue, blueValue):
 # Multiple components can update everytime interval gets fired.
 @app.callback(Output("live-update-graph", "figure"), [Input("color", "value")])
 def update_graph_live(value):
-    fig = plot_from_data(pcs, label=value, pca_loadings=loadings)
+    fig = plot_from_data(pcs, color_map = color_map, label=value, pca_loadings=loadings)
     return fig
 
 
