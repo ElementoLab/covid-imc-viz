@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import json
 import datetime
+from typing import List, Union, Optional
 
 from io import BytesIO as _BytesIO
 import requests
@@ -29,6 +30,8 @@ import plotly.graph_objects as go
 from flask_caching import Cache
 
 
+Array = Union[np.ndarray]
+
 pd.options.mode.chained_assignment = None
 
 
@@ -36,8 +39,9 @@ URL_INFO = "metadata/processed_stack.upload_info.json"
 CHANNEL_INFO = "metadata/processed_stack.channel_info.json"
 
 
-def now():
-    return datetime.datetime.now().strftime('%H:%M:%S')
+def now(format=True):
+    n = datetime.datetime.now()
+    return n.strftime("%H:%M:%S") if format else n
 
 
 def ellipse(x, y, n_std=2, N=100):
@@ -68,9 +72,13 @@ def ellipse(x, y, n_std=2, N=100):
     return x, y
 
 
-
 def plot_from_data(
-    df, color_map, label="Disease Group", draw_centroid=True, draw_ellipse=True, pca_loadings=None
+    df,
+    color_map,
+    label="Disease Group",
+    draw_centroid=True,
+    draw_ellipse=True,
+    pca_loadings=None,
 ):
     """
     Generate pca plot from pca dataframe with metadata.
@@ -79,7 +87,9 @@ def plot_from_data(
     fig = go.Figure()
 
     # if label is categorical
-    if pd.api.types.is_object_dtype(df[label]) or pd.api.types.is_categorical(df[label]):
+    if pd.api.types.is_object_dtype(df[label]) or pd.api.types.is_categorical(
+        df[label]
+    ):
         i = 0
 
         # get color map
@@ -98,15 +108,15 @@ def plot_from_data(
             # retrieve hoverinformation / roi information and fill empty values with empty string
             customdata = group[hoverinfo]
             numeric_col = customdata.select_dtypes("float64").columns
-            customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(
-                str
-            )
+            customdata.loc[:, numeric_col] = customdata.select_dtypes(
+                "float64"
+            ).astype(str)
             customdata = customdata.replace(["", "nan"], "NA", regex=False)
 
             # add pca scatter plot
             fig.add_scatter(
-                x=group['0'],
-                y=group['1'],
+                x=group["0"],
+                y=group["1"],
                 mode="markers",
                 name=str(target),
                 legendgroup=target,
@@ -119,21 +129,21 @@ def plot_from_data(
 
             # add centroids
             fig.add_scatter(
-                x=[group.mean()['0']],
-                y=[group.mean()['1']],
+                x=[group.mean()["0"]],
+                y=[group.mean()["1"]],
                 marker_symbol="cross",
                 mode="markers",
                 legendgroup=target,
                 customdata=None,
                 hoverinfo="skip",
                 marker_color="white",
-                marker_size = 8,
-                opacity = 0.7,
+                marker_size=8,
+                opacity=0.7,
                 showlegend=False,
             )
 
             # add ellipse denoting 95% percent confidence covariance
-            x, y = ellipse(x=group['0'], y=group['1'])
+            x, y = ellipse(x=group["0"], y=group["1"])
             fig.add_scatter(
                 x=x,
                 y=y,
@@ -142,7 +152,7 @@ def plot_from_data(
                 customdata=None,
                 hoverinfo="skip",
                 marker_color=colors[i],
-                opacity = 0.15,
+                opacity=0.15,
                 showlegend=False,
             )
             i = i + 1
@@ -153,13 +163,13 @@ def plot_from_data(
         if len(group) > 0:
             target = "Unlabelled"
             fig.add_scatter(
-                x=group['0'],
-                y=group['1'],
+                x=group["0"],
+                y=group["1"],
                 mode="markers",
                 name=str(target),
                 legendgroup=target,
-                marker_size = 12,
-                opacity = 0.7,
+                marker_size=12,
+                opacity=0.7,
                 customdata=customdata,
                 hovertemplate=custom_hovertemplate,
                 marker_color="grey",
@@ -167,21 +177,21 @@ def plot_from_data(
 
             # add missing value centroid
             fig.add_scatter(
-                x=[group.mean()['0']],
-                y=[group.mean()['1']],
+                x=[group.mean()["0"]],
+                y=[group.mean()["1"]],
                 marker_symbol="cross",
                 mode="markers",
                 legendgroup=target,
                 customdata=None,
                 hoverinfo="skip",
                 marker_color="white",
-                marker_size = 8,
-                opacity = 0.7,
+                marker_size=8,
+                opacity=0.7,
                 showlegend=False,
             )
 
             # add ellipse denoting 95% percent confidence covariance for missing values
-            x, y = ellipse(x=group['0'], y=group['1'])
+            x, y = ellipse(x=group["0"], y=group["1"])
             fig.add_scatter(
                 x=x,
                 y=y,
@@ -190,7 +200,7 @@ def plot_from_data(
                 customdata=None,
                 hoverinfo="skip",
                 marker_color="grey",
-                opacity = 0.15,
+                opacity=0.15,
                 showlegend=False,
             )
 
@@ -200,13 +210,15 @@ def plot_from_data(
         # get hoverinformation
         customdata = df[hoverinfo]
         numeric_col = customdata.select_dtypes("float64").columns
-        customdata.loc[:, numeric_col] = customdata.select_dtypes("float64").astype(str)
+        customdata.loc[:, numeric_col] = customdata.select_dtypes(
+            "float64"
+        ).astype(str)
         customdata = customdata.replace(["", "nan"], "NA", regex=False)
 
         # add scatterplot and colorbar for values
         fig.add_scatter(
-            x=df['0'],
-            y=df['1'],
+            x=df["0"],
+            y=df["1"],
             mode="markers",
             opacity=0.7,
             customdata=customdata,
@@ -240,7 +252,9 @@ def plot_from_data(
             )
 
     # add figure axis and theme
-    fig.update_layout(xaxis_title="PC1", yaxis_title="PC2", template="plotly_dark")
+    fig.update_layout(
+        xaxis_title="PC1", yaxis_title="PC2", template="plotly_dark"
+    )
 
     return fig
 
@@ -259,37 +273,40 @@ hoverinfo = [
 
 # Decide Labels to Use from Overall Dataframe
 col_interest = [
-    'roi',
-    '0',
-    '1',
-    'age',
-    'sex',
-    'race',
-    'smoker',
-    'disease',
-    'Disease Group',
-    'classification',
-    'cause_of_death',
-    'lung_weight_grams',
-    'comorbidities',
-    'treatment',
-    'days_intubated',
-    'days_of_disease',
-    'days_in_hospital',
-    'fever_temperature_celsius',
-    'cough',
-    'shortness_of_breath',
-    'Other lung lesions',
-    'PLT/mL',
-    'D-dimer (mg/L)',
-    'WBC',
-    'LY%',
-    'PMN %'
+    "roi",
+    "0",
+    "1",
+    "age",
+    "sex",
+    "race",
+    "smoker",
+    "disease",
+    "Disease Group",
+    "classification",
+    "cause_of_death",
+    "lung_weight_grams",
+    "comorbidities",
+    "treatment",
+    "days_intubated",
+    "days_of_disease",
+    "days_in_hospital",
+    "fever_temperature_celsius",
+    "cough",
+    "shortness_of_breath",
+    "Other lung lesions",
+    "PLT/mL",
+    "D-dimer (mg/L)",
+    "WBC",
+    "LY%",
+    "PMN %",
 ]
 
 # Hover Information Template
 custom_hovertemplate = "<br>".join(
-    ["" + col.capitalize() + ": %{customdata[" + str(i) + "]}" for i, col in enumerate(hoverinfo)]
+    [
+        "" + col.capitalize() + ": %{customdata[" + str(i) + "]}"
+        for i, col in enumerate(hoverinfo)
+    ]
 )
 
 # the style arguments for the sidebar. We use position:fixed and a fixed width
@@ -300,7 +317,7 @@ SIDEBAR_STYLE = {
     "bottom": 0,
     "width": "27rem",
     "padding": "2rem 1rem",
-    "background-color": "#111111"
+    "background-color": "#111111",
 }
 
 # the styles for the main content position it to the right of the sidebar and
@@ -342,14 +359,16 @@ app = dash.Dash(
 server = app.server
 
 # Add Cache to Server
-cache = Cache(server, config={
-    'CACHE_TYPE': 'simple',
-
-    # should be equal to maximum number of users on the app at a single time
-    # higher numbers will store more data in the filesystem / redis cache
-    'CACHE_THRESHOLD': 25,
-    "CACHE_DEFAULT_TIMEOUT": 300
-})
+cache = Cache(
+    server,
+    config={
+        "CACHE_TYPE": "simple",
+        # should be equal to maximum number of users on the app at a single time
+        # higher numbers will store more data in the filesystem / redis cache
+        "CACHE_THRESHOLD": 25,
+        "CACHE_DEFAULT_TIMEOUT": 300,
+    },
+)
 
 #### Load data ####
 APP_PATH = Path(__file__).parent.resolve().as_posix()
@@ -383,8 +402,10 @@ for cat, order in cat_order.items():
 
 # color mapper
 color_map = dict()
-color_map["Disease Group"] = [px.colors.qualitative.D3[x] for x in [2,0,1,5,4,3]]
-color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2,0,1,3]]
+color_map["Disease Group"] = [
+    px.colors.qualitative.D3[x] for x in [2, 0, 1, 5, 4, 3]
+]
+color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2, 0, 1, 3]]
 color_map["default"] = (
     px.colors.qualitative.D3
     + px.colors.qualitative.G10
@@ -392,17 +413,19 @@ color_map["default"] = (
     + px.colors.qualitative.Plotly
 )
 
-fig = plot_from_data(pcs, color_map = color_map, pca_loadings = loadings)
+fig = plot_from_data(pcs, color_map=color_map, pca_loadings=loadings)
 fig.update_layout(clickmode="event+select")
 
 # load options for dropdown box
 color_options = []
 for label in col_interest[3:]:
-    color_options.append({"label": label.capitalize().replace("_"," "), "value": label})
+    color_options.append(
+        {"label": label.capitalize().replace("_", " "), "value": label}
+    )
 
 # load image metadata from JSON
-roi2url = json.load(open(URL_INFO, 'r'))
-roi2channel = pd.Series(json.load(open(CHANNEL_INFO, 'r')))
+roi2url = json.load(open(URL_INFO, "r"))
+roi2channel = pd.Series(json.load(open(CHANNEL_INFO, "r")))
 
 channel_options = []
 for value, label in enumerate(roi2channel):
@@ -412,7 +435,11 @@ for value, label in enumerate(roi2channel):
 # Build DOM
 sidebar = html.Div(
     [
-        html.H2("Data explorer", className="display-4", style={"margin-left": "5px", "margin-top":"15%"}),
+        html.H2(
+            "Data explorer",
+            className="display-4",
+            style={"margin-left": "5px", "margin-top": "15%"},
+        ),
         html.Hr(),
         html.Div(
             [
@@ -420,7 +447,9 @@ sidebar = html.Div(
                     [
                         html.H5("Label Datapoints by:"),
                         dcc.Dropdown(
-                            options=color_options, id="color", value="Disease Group"
+                            options=color_options,
+                            id="color",
+                            value="Disease Group",
                         ),
                     ],
                     style={"padding": "10px"},
@@ -429,14 +458,26 @@ sidebar = html.Div(
                 html.Div(
                     [
                         html.H5("IMC Image Markers:"),
-                        html.H5("Red:", style={"color": "red", "margin-left": "5px"}),
-                        dcc.Dropdown(options=channel_options, id="red", value = 1),
                         html.H5(
-                            "Green:", style={"color": "green", "margin-left": "5px"}
+                            "Red:", style={"color": "red", "margin-left": "5px"}
                         ),
-                        dcc.Dropdown(options=channel_options, id="green", value = 28),
-                        html.H5("Blue:", style={"color": "blue", "margin-left": "5px"}),
-                        dcc.Dropdown(options=channel_options, id="blue", value = 10),
+                        dcc.Dropdown(
+                            options=channel_options, id="red", value=1
+                        ),
+                        html.H5(
+                            "Green:",
+                            style={"color": "green", "margin-left": "5px"},
+                        ),
+                        dcc.Dropdown(
+                            options=channel_options, id="green", value=28
+                        ),
+                        html.H5(
+                            "Blue:",
+                            style={"color": "blue", "margin-left": "5px"},
+                        ),
+                        dcc.Dropdown(
+                            options=channel_options, id="blue", value=10
+                        ),
                     ],
                     style={"padding": "10px"},
                 ),
@@ -452,17 +493,30 @@ content = html.Div(
         html.Div(
             id="header",
             children=[
-                html.Img(id="logo", src=app.get_asset_url("LOGO_ENGLANDER_2LINE_PMS.png")),
-                html.H2(children="Imaging mass cytometry data explorer", className="display-4"),
-                html.H3(children="Lung tissue under infection by SARS-CoV-2 and other pathogens", className="display-4"),
+                html.Img(
+                    id="logo",
+                    src=app.get_asset_url("LOGO_ENGLANDER_2LINE_PMS.png"),
+                ),
+                html.H2(
+                    children="Imaging mass cytometry data explorer",
+                    className="display-4",
+                ),
+                html.H3(
+                    children="Lung tissue under infection by SARS-CoV-2 and other pathogens",
+                    className="display-4",
+                ),
                 html.P(
                     id="description",
                     children=[
                         "Data from publication "
                         '"The spatio-temporal landscape of lung pathology in SARS-CoV-2 infection", ',
-                        html.A("doi:10.1101/2020.10.26.20219584v1", href="https://www.medrxiv.org/content/10.1101/2020.10.26.20219584v1"),
+                        html.A(
+                            "doi:10.1101/2020.10.26.20219584v1",
+                            href="https://www.medrxiv.org/content/10.1101/2020.10.26.20219584v1",
+                        ),
                         html.Br(),
-                        "Produced by: Elemento Lab, Weill Cornell Medicine"],
+                        "Produced by: Elemento Lab, Weill Cornell Medicine",
+                    ],
                 ),
             ],
         ),
@@ -505,8 +559,8 @@ content = html.Div(
                     id="right-column",
                     children=[
                         html.Div(
-                            id = "image-container",
-                            children = [
+                            id="image-container",
+                            children=[
                                 html.H5(
                                     "ROI Viewer (click points on the left to load images)"
                                 ),
@@ -522,17 +576,29 @@ content = html.Div(
                                 ),
                                 dcc.Loading(
                                     id="loading-2",
-                                    children=[html.Div([html.Div(id="loading-output-2")])],
+                                    children=[
+                                        html.Div(
+                                            [html.Div(id="loading-output-2")]
+                                        )
+                                    ],
                                     type="default",
                                 ),
-                                html.Div([
-                                    dcc.Markdown("""**Hover Data**  Mouse over values in the graph."""),
-                                    html.Pre(id="hover-data"),
-                                ]),
-                                html.Div([
-                                    dcc.Markdown("""**Click Data**  Click on points in the graph."""),
-                                    html.Pre(id="click-data")
-                                ]),
+                                html.Div(
+                                    [
+                                        dcc.Markdown(
+                                            """**Hover Data**  Mouse over values in the graph."""
+                                        ),
+                                        html.Pre(id="hover-data"),
+                                    ]
+                                ),
+                                html.Div(
+                                    [
+                                        dcc.Markdown(
+                                            """**Click Data**  Click on points in the graph."""
+                                        ),
+                                        html.Pre(id="click-data"),
+                                    ]
+                                ),
                             ],
                             style={"height": "100%", "overflow": "contain"},
                         )
@@ -555,9 +621,23 @@ content = html.Div(
 app.layout = html.Div([sidebar, content])
 
 
+@cache.memoize(timeout=300)
+def get_image(img_name: str, channels: List[int]) -> Array:
+    res = parmap.starmap_async(
+        fetch_array,
+        zip([img_name] * len(channels), roi2channel.loc[list(channels)]),
+    )
+
+    # In serial:
+    # return np.asarray(
+    #     [fetch_array(img_name, roi2channel.loc[ch]) for ch in channels]
+    # )
+    return np.asarray(res.get())
+
+
 # Cache Function
 @cache.memoize(timeout=300)
-def fetch_array(sample_name, channel):
+def fetch_array(sample_name: str, channel: str) -> Optional[Array]:
     name = f"{sample_name}.{channel}"
     if name in roi2url:
         req_url = roi2url[name]["shared_download_url"]
@@ -573,6 +653,7 @@ def fetch_array(sample_name, channel):
         return img
     print(f"Could not find '{name}' in database.")
     return None
+
 
 # Callback Functions for the App
 @app.callback(
@@ -596,11 +677,12 @@ def display_click_data(clickData):
         return "LOADED: {}".format(clickData["points"][0]["customdata"][-1])
     return
 
+
 # Image Loader Function
 @app.callback(
     [
         Output("image-file-data", "figure"),
-        Output("loading-output-2", "children")
+        Output("loading-output-2", "children"),
     ],
     [
         Input("live-update-graph", "clickData"),
@@ -609,19 +691,22 @@ def display_click_data(clickData):
         Input("blue", "value"),
     ],
 )
-def display_image_data(clickData, *channels):
+def display_image_data(clickData, *channels: List[int]):
+    start = now(False)
     # img_dir = "assets/"
     if clickData == None:
-        return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
+        return (
+            empty_fig,
+            dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
+        )
     if "customdata" not in clickData["points"][0]:
-        return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
+        return (
+            empty_fig,
+            dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
+        )
 
     img_name = clickData["points"][0]["customdata"][-1]
-
-    res = parmap.starmap_async(
-        fetch_array,
-        zip([img_name] * len(channels), roi2channel.loc[list(channels)]))
-    output = np.asarray(res.get())
+    output = get_image(img_name, channels)
     if len(output.shape) != 3:
         return empty_fig
 
@@ -635,12 +720,16 @@ def display_image_data(clickData, *channels):
     fig2.update_yaxes(showticklabels=False, showgrid=False)
     fig2.update_layout(
         coloraxis_showscale=False,
-        margin=dict(l=10, r=10, t=10, b=10),
-        template="plotly_dark"
+        margin=dict(l=0, r=0, t=0, b=0),
+        template="plotly_dark",
     )
+    end = now(False)
+    print(f"Took {end - start} to update.")
 
     return fig2, "loaded"
-'''
+
+
+"""
     if img_name in roi2url:
 
         req_url = roi2url[img_name]["shared_download_url"]
@@ -655,11 +744,13 @@ def display_image_data(clickData, *channels):
         output[0] = img[red_channel]
         output[1] = img[green_channel]
         output[2] = img[blue_channel]
-'''
+"""
 # Multiple components can update everytime interval gets fired.
 @app.callback(Output("live-update-graph", "figure"), [Input("color", "value")])
 def update_graph_live(value):
-    fig = plot_from_data(pcs, color_map = color_map, label=value, pca_loadings=loadings)
+    fig = plot_from_data(
+        pcs, color_map=color_map, label=value, pca_loadings=loadings
+    )
     return fig
 
 
