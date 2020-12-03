@@ -6,9 +6,12 @@
 import os
 from pathlib import Path
 import re
+import json
+import datetime
 
 from io import BytesIO as _BytesIO
 import requests
+import parmap
 
 import dash
 import dash_bootstrap_components as dbc
@@ -23,10 +26,7 @@ from PIL import Image
 import plotly.express as px
 import plotly.graph_objects as go
 
-import json
-
 from flask_caching import Cache
-import datetime
 
 
 pd.options.mode.chained_assignment = None
@@ -402,7 +402,7 @@ for label in col_interest[3:]:
 
 # load image metadata from JSON
 roi2url = json.load(open(URL_INFO, 'r'))
-roi2channel = json.load(open(CHANNEL_INFO, 'r'))
+roi2channel = pd.Series(json.load(open(CHANNEL_INFO, 'r')))
 
 channel_options = []
 for value, label in enumerate(roi2channel):
@@ -520,6 +520,11 @@ content = html.Div(
                                         "align": "center",
                                     },
                                 ),
+                                dcc.Loading(
+                                    id="loading-2",
+                                    children=[html.Div([html.Div(id="loading-output-2")])],
+                                    type="default",
+                                ),
                                 html.Div([
                                     dcc.Markdown("""**Hover Data**  Mouse over values in the graph."""),
                                     html.Pre(id="hover-data"),
@@ -528,11 +533,6 @@ content = html.Div(
                                     dcc.Markdown("""**Click Data**  Click on points in the graph."""),
                                     html.Pre(id="click-data")
                                 ]),
-                                dcc.Loading(
-                                    id="loading-2",
-                                    children=[html.Div([html.Div(id="loading-output-2")])],
-                                    type="default",
-                                )
                             ],
                             style={"height": "100%", "overflow": "contain"},
                         )
@@ -560,7 +560,6 @@ app.layout = html.Div([sidebar, content])
 def fetch_array(sample_name, channel):
     name = f"{sample_name}.{channel}"
     if name in roi2url:
-
         req_url = roi2url[name]["shared_download_url"]
         print(f"Downloading: {sample_name}, {channel} at {now()}")
 
@@ -572,6 +571,7 @@ def fetch_array(sample_name, channel):
         img = np.load(_BytesIO(res.content))["array"]
 
         return img
+    print(f"Could not find '{name}' in database.")
     return None
 
 # Callback Functions for the App
@@ -618,15 +618,12 @@ def display_image_data(clickData, *channels):
 
     img_name = clickData["points"][0]["customdata"][-1]
 
-    output = None
-    for i, channel in enumerate(channels):
-        img = fetch_array(img_name, roi2channel[channel])
-        if img is None:
-            print(f"{img_name}  - {roi2channel[channel]} not found")
-            return empty_fig
-        if output is None:
-            output = np.zeros(shape=(3, img.shape[0], img.shape[1]))
-        output[i] = img
+    res = parmap.starmap_async(
+        fetch_array,
+        zip([img_name] * len(channels), roi2channel.loc[list(channels)]))
+    output = np.asarray(res.get())
+    if len(output.shape) != 3:
+        return empty_fig
 
     output = output.transpose((-1, 1, 0))
     if output.shape[0] > output.shape[1]:
