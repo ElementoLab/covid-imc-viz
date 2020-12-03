@@ -401,7 +401,7 @@ for value, label in enumerate(roi2channel):
 
 sidebar = html.Div(
     [
-        html.H2("Image Navigator", className="display-4", style={"margin-left": "5px"}),
+        html.H2("Image Navigator", className="display-4", style={"margin-left": "5px", "margin-top":"15%"}),
         html.Hr(),
         html.Div(
             [
@@ -441,7 +441,7 @@ content = html.Div(
         html.Div(
             id="header",
             children=[
-                # html.Img(id="logo", src=app.get_asset_url("dash-logo.png")),
+                html.Img(id="logo", src=app.get_asset_url("LOGO_ENGLANDER_2LINE_PMS.png")),
                 html.H2(children="SARS-CoV-2 (COVID-19) IMC Explorer", className="display-4"),
                 html.P(
                     id="description",
@@ -469,7 +469,11 @@ content = html.Div(
                                 dcc.Graph(
                                     id="live-update-graph",
                                     figure=fig,
-                                    style={"width": "inherit", "height": "inherit"},
+                                    style={
+                                        "width": "inherit",
+                                        "height": "60vh",
+                                        "align": "center",
+                                    },
                                 ),
                             ],
                             style={"height": "100%", "overflow": "contain"},
@@ -487,58 +491,36 @@ content = html.Div(
                     id="right-column",
                     children=[
                         html.Div(
-                            id="image",
-                            children=[
-                                html.Div(
-                                    id="image-panel",
-                                    children=[
-                                        html.H5(
-                                            "ROI Viewer (Click on the points to Load Images)"
-                                        ),
-                                        html.Hr(),
-                                        # html.P([
-                                        #    html.Pre(id="image-file-data")
-                                        # ], style={"text-align":"center"})
-                                        dcc.Graph(
-                                            id="image-file-data",
-                                            figure=empty_fig,
-                                            style={
-                                                "width": "inherit",
-                                                "height": "50vh",
-                                                "align": "center",
-                                            },
-                                        ),
-                                        html.Div(
-                                            [
-                                                dcc.Markdown(
-                                                    """
-                                                **Hover Data**
-                                                    Mouse over values in the graph.
-                                            """
-                                                ),
-                                                html.Pre(id="hover-data"),
-                                            ]
-                                        ),
-                                        html.Div(
-                                            [
-                                                dcc.Markdown(
-                                                    """
-                                                **Click Data**
-                                                Click on points in the graph.
-                                                """
-                                                ),
-                                                html.Pre(id="click-data"),
-                                                dcc.Loading(
-                                                    id="loading-2",
-                                                    children=[html.Div([html.Div(id="loading-output-2")])],
-                                                    type="circle",
-                                                ),
-                                            ]
-                                        ),
-                                    ],
-                                    style={"height": "100%", "overflow": "contain"},
+                            id = "image-container",
+                            children = [
+                                html.H5(
+                                    "ROI Viewer (Click on the points to Load Images)"
+                                ),
+                                html.Hr(),
+                                dcc.Graph(
+                                    id="image-file-data",
+                                    figure=empty_fig,
+                                    style={
+                                        "width": "inherit",
+                                        "height": "60vh",
+                                        "align": "center",
+                                    },
+                                ),
+                                html.Div([
+                                    dcc.Markdown("""**Hover Data**  Mouse over values in the graph."""),
+                                    html.Pre(id="hover-data"),
+                                ]),
+                                html.Div([
+                                    dcc.Markdown("""**Click Data**  Click on points in the graph."""),
+                                    html.Pre(id="click-data")
+                                ]),
+                                dcc.Loading(
+                                    id="loading-2",
+                                    children=[html.Div([html.Div(id="loading-output-2")])],
+                                    type="default",
                                 )
                             ],
+                            style={"height": "100%", "overflow": "contain"},
                         )
                     ],
                     style={
@@ -569,7 +551,7 @@ def fetch_array(sample_name):
         res = requests.get(req_url)
         print("Download Completed: {} at {}".format(sample_name, datetime.datetime.now().strftime('%H:%M:%S')))
         
-        #res.raise_for_status()
+        res.raise_for_status()
 
         img = np.load(_BytesIO(res.content))["stack"]
 
@@ -584,7 +566,7 @@ def display_hover_data(hoverData):
     if hoverData == None:
         return None
     elif "customdata" in hoverData["points"][0]:
-        return hoverData["points"][0]["customdata"][-1]
+        return "HOVERED: {}".format(hoverData["points"][0]["customdata"][-1])
     return
 
 
