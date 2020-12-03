@@ -12,3 +12,4 @@ Pillow==8.0.1
 plotly==4.10.0
 requests
 Flask-Caching==1.9.0
+parmap==1.5.2
