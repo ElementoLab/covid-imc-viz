@@ -1,10 +1,10 @@
 # to dos
-# 
+#
 # Domain Rerouting
 # Image Redirection
 
 import os
-import pathlib
+from pathlib import Path
 import re
 
 from io import BytesIO as _BytesIO
@@ -31,8 +31,19 @@ import datetime
 
 pd.options.mode.chained_assignment = None
 
-# get ellipse around centroid for each groups
+
+URL_INFO = "metadata/processed_stack.upload_info.json"
+CHANNEL_INFO = "metadata/processed_stack.channel_info.json"
+
+
+def now():
+    return datetime.datetime.now().strftime('%H:%M:%S')
+
+
 def ellipse(x, y, n_std=2, N=100):
+    """
+    Get ellipse around centroid for each group.
+    """
     cov = np.cov(x, y)
     pearson = cov[0, 1] / np.sqrt(cov[0, 0] * cov[1, 1])
 
@@ -57,10 +68,13 @@ def ellipse(x, y, n_std=2, N=100):
     return x, y
 
 
-# generate pca plot from pca dataframe with metadata
+
 def plot_from_data(
     df, color_map, label="Disease Group", draw_centroid=True, draw_ellipse=True, pca_loadings=None
 ):
+    """
+    Generate pca plot from pca dataframe with metadata.
+    """
     # create figure layout
     fig = go.Figure()
 
@@ -76,7 +90,7 @@ def plot_from_data(
 
         # iterate through each category
         for target, group in df.groupby(label):
-            
+
             # skip missing values
             if target == "":
                 continue
@@ -338,15 +352,13 @@ cache = Cache(server, config={
 })
 
 #### Load data ####
-APP_PATH = str(pathlib.Path(__file__).parent.resolve())
+APP_PATH = Path(__file__).parent.resolve().as_posix()
 
 # load pca plot information
-pcs = pd.read_csv(os.path.join(APP_PATH, os.path.join("data", "pcadata.csv")))
+pcs = pd.read_csv(Path(APP_PATH) / "data" / "pcadata.csv")
 pcs = pcs[col_interest]
 
-loadings = pd.read_csv(
-    os.path.join(APP_PATH, os.path.join("data", "loadings.csv")), index_col=0
-)
+loadings = pd.read_csv(Path(APP_PATH) / "data" / "loadings.csv", index_col=0)
 
 for col, dtype in zip(pcs.columns, pcs.dtypes):
     if dtype == "O":
@@ -372,7 +384,7 @@ for cat, order in cat_order.items():
 # color mapper
 color_map = dict()
 color_map["Disease Group"] = [px.colors.qualitative.D3[x] for x in [2,0,1,5,4,3]]
-color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2,0,1,3]] 
+color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2,0,1,3]]
 color_map["default"] = (
     px.colors.qualitative.D3
     + px.colors.qualitative.G10
@@ -388,20 +400,19 @@ color_options = []
 for label in col_interest[3:]:
     color_options.append({"label": label.capitalize().replace("_"," "), "value": label})
 
-with open("metadata/processed_stack.upload_info.json") as f:
-    roi2url = json.load(f)
-
-with open("metadata/processed_stack.channel_info.json") as f:
-    roi2channel = json.load(f)
+# load image metadata from JSON
+roi2url = json.load(open(URL_INFO, 'r'))
+roi2channel = json.load(open(CHANNEL_INFO, 'r'))
 
 channel_options = []
 for value, label in enumerate(roi2channel):
     channel_options.append({"label": label, "value": value})
 
 
+# Build DOM
 sidebar = html.Div(
     [
-        html.H2("Image Navigator", className="display-4", style={"margin-left": "5px", "margin-top":"15%"}),
+        html.H2("Data explorer", className="display-4", style={"margin-left": "5px", "margin-top":"15%"}),
         html.Hr(),
         html.Div(
             [
@@ -418,13 +429,13 @@ sidebar = html.Div(
                 html.Div(
                     [
                         html.H5("IMC Image Markers:"),
-                        html.H5("RED:", style={"color": "red", "margin-left": "5px"}),
-                        dcc.Dropdown(options=channel_options, id="red", value = 13),
+                        html.H5("Red:", style={"color": "red", "margin-left": "5px"}),
+                        dcc.Dropdown(options=channel_options, id="red", value = 1),
                         html.H5(
-                            "GREEN:", style={"color": "green", "margin-left": "5px"}
+                            "Green:", style={"color": "green", "margin-left": "5px"}
                         ),
                         dcc.Dropdown(options=channel_options, id="green", value = 28),
-                        html.H5("BLUE:", style={"color": "blue", "margin-left": "5px"}),
+                        html.H5("Blue:", style={"color": "blue", "margin-left": "5px"}),
                         dcc.Dropdown(options=channel_options, id="blue", value = 10),
                     ],
                     style={"padding": "10px"},
@@ -442,13 +453,16 @@ content = html.Div(
             id="header",
             children=[
                 html.Img(id="logo", src=app.get_asset_url("LOGO_ENGLANDER_2LINE_PMS.png")),
-                html.H2(children="SARS-CoV-2 (COVID-19) IMC Explorer", className="display-4"),
+                html.H2(children="Imaging mass cytometry data explorer", className="display-4"),
+                html.H3(children="Lung tissue under infection by SARS-CoV-2 and other pathogens", className="display-4"),
                 html.P(
                     id="description",
-                    children="Interactive Plot to explore results from \
-                    The spatio-temporal landscape of lung pathology in SARS-CoV-2 infection,\
-                    (https://www.medrxiv.org/content/10.1101/2020.10.26.20219584v1) Figure 3.\
-                    Produced by: Elemento Lab, Weill Cornell Medicine",
+                    children=[
+                        "Data from publication "
+                        '"The spatio-temporal landscape of lung pathology in SARS-CoV-2 infection", ',
+                        html.A("doi:10.1101/2020.10.26.20219584v1", href="https://www.medrxiv.org/content/10.1101/2020.10.26.20219584v1"),
+                        html.Br(),
+                        "Produced by: Elemento Lab, Weill Cornell Medicine"],
                 ),
             ],
         ),
@@ -494,7 +508,7 @@ content = html.Div(
                             id = "image-container",
                             children = [
                                 html.H5(
-                                    "ROI Viewer (Click on the points to Load Images)"
+                                    "ROI Viewer (click points on the left to load images)"
                                 ),
                                 html.Hr(),
                                 dcc.Graph(
@@ -540,20 +554,22 @@ content = html.Div(
 # App layout
 app.layout = html.Div([sidebar, content])
 
+
 # Cache Function
 @cache.memoize(timeout=300)
-def fetch_array(sample_name):
-    if sample_name in roi2url:
+def fetch_array(sample_name, channel):
+    name = f"{sample_name}.{channel}"
+    if name in roi2url:
 
-        req_url = roi2url[sample_name]["shared_download_url"]
-        print("Downloading: {} at {}".format(sample_name, datetime.datetime.now().strftime('%H:%M:%S')))
-        
+        req_url = roi2url[name]["shared_download_url"]
+        print(f"Downloading: {sample_name}, {channel} at {now()}")
+
         res = requests.get(req_url)
-        print("Download Completed: {} at {}".format(sample_name, datetime.datetime.now().strftime('%H:%M:%S')))
-        
+        print(f"Download Completed: {sample_name}, {channel} at {now()}")
+
         res.raise_for_status()
 
-        img = np.load(_BytesIO(res.content))["stack"]
+        img = np.load(_BytesIO(res.content))["array"]
 
         return img
     return None
@@ -593,7 +609,7 @@ def display_click_data(clickData):
         Input("blue", "value"),
     ],
 )
-def display_image_data(clickData, redValue, greenValue, blueValue):
+def display_image_data(clickData, *channels):
     # img_dir = "assets/"
     if clickData == None:
         return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
@@ -601,22 +617,16 @@ def display_image_data(clickData, redValue, greenValue, blueValue):
         return empty_fig, dcc.Markdown("""**Click Any Points on PCA plot to load images**""")
 
     img_name = clickData["points"][0]["customdata"][-1]
-    # print(img_name)
-    red_channel = redValue
-    green_channel = greenValue
-    blue_channel = blueValue
-    ret = [img_name, red_channel, green_channel, blue_channel]
-    # img_names = os.listdir(img_dir)
 
-    img = fetch_array(img_name)
-    if img is None:
-        print(img_name, "not found")
-        return empty_fig
-    
-    output = np.zeros(shape=(3, img.shape[1], img.shape[2]))
-    output[0] = img[red_channel]
-    output[1] = img[green_channel]
-    output[2] = img[blue_channel]
+    output = None
+    for i, channel in enumerate(channels):
+        img = fetch_array(img_name, roi2channel[channel])
+        if img is None:
+            print(f"{img_name}  - {roi2channel[channel]} not found")
+            return empty_fig
+        if output is None:
+            output = np.zeros(shape=(3, img.shape[0], img.shape[1]))
+        output[i] = img
 
     output = output.transpose((-1, 1, 0))
     if output.shape[0] > output.shape[1]:
