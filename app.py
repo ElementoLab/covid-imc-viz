@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import json
 import datetime
+import tempfile
 from typing import List, Union, Optional
 
 from io import BytesIO as _BytesIO
@@ -359,10 +360,13 @@ app = dash.Dash(
 server = app.server
 
 # Add Cache to Server
+cache_dir = tempfile.TemporaryDirectory().name
+print(f"Caching to '{cache_dir}'.")
 cache = Cache(
     server,
     config={
-        "CACHE_TYPE": "simple",
+        "CACHE_DIR": cache_dir,
+        "CACHE_TYPE": "filesystem",
         # should be equal to maximum number of users on the app at a single time
         # higher numbers will store more data in the filesystem / redis cache
         "CACHE_THRESHOLD": 25,
