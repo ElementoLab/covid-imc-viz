@@ -9,7 +9,15 @@ import re
 import json
 import datetime
 import tempfile
-from typing import List, Union, Optional
+from typing import (
+    Tuple,
+    List,
+    Mapping,
+    Union,
+    Optional,
+    Literal,
+    overload,
+)
 
 from io import BytesIO as _BytesIO
 import requests
@@ -25,27 +33,61 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 
+import plotly
 import plotly.express as px
 import plotly.graph_objects as go
 
 from flask_caching import Cache
 
-
-Array = Union[np.ndarray]
-
 pd.options.mode.chained_assignment = None
 
 
-URL_INFO = "metadata/processed_stack.upload_info.json"
-CHANNEL_INFO = "metadata/processed_stack.channel_info.json"
+# Some custom types
+DataFrame = Union[pd.DataFrame]
+Array = Union[np.ndarray]
+Fig = Union[plotly.graph_objects.Figure]
+
+# Config and defaults
+APP_PATH = Path(__file__).parent.resolve()
+CONFIG_FILE = "config.json"
+config = json.load(open(APP_PATH / CONFIG_FILE, "r"))
+# DEFAULT_FIGURE = (
+#     config["DEFAULT_ROI"],
+#     config["DEFAULT_CHANNELS"],
+# )  # change to (None, None) to display empty
+DEFAULT_FIGURE = (None, None)
+
+# Set up cache
+cache = Cache(
+    config=dict(
+        **config["CACHE_CONFIG"],
+        **(
+            {"CACHE_DIR": tempfile.TemporaryDirectory().name}
+            if config["CACHE_CONFIG"]["CACHE_TYPE"] == "filesystem"
+            else {}
+        ),
+    )
+)
 
 
-def now(format=True):
+@overload
+def now(format: Literal[True]) -> str:
+    ...
+
+
+@overload
+def now(format: Literal[False]) -> datetime.datetime:
+    ...
+
+
+def now(format: bool = True) -> Union[str, datetime.datetime]:
     n = datetime.datetime.now()
     return n.strftime("%H:%M:%S") if format else n
 
 
-def ellipse(x, y, n_std=2, N=100):
+def ellipse(
+    x: float, y: float, n_std: int = 2, N: int = 100
+) -> Tuple[float, float]:
     """
     Get ellipse around centroid for each group.
     """
@@ -74,13 +116,13 @@ def ellipse(x, y, n_std=2, N=100):
 
 
 def plot_from_data(
-    df,
-    color_map,
-    label="Disease Group",
-    draw_centroid=True,
-    draw_ellipse=True,
-    pca_loadings=None,
-):
+    df: DataFrame,
+    color_map: Mapping[str, List[str]],
+    label: str = "Disease Group",
+    draw_centroid: bool = True,
+    draw_ellipse: bool = True,
+    pca_loadings: DataFrame = None,
+) -> Fig:
     """
     Generate pca plot from pca dataframe with metadata.
     """
@@ -88,9 +130,7 @@ def plot_from_data(
     fig = go.Figure()
 
     # if label is categorical
-    if pd.api.types.is_object_dtype(df[label]) or pd.api.types.is_categorical(
-        df[label]
-    ):
+    if df[label].dtype.name == "category":
         i = 0
 
         # get color map
@@ -107,7 +147,7 @@ def plot_from_data(
                 continue
 
             # retrieve hoverinformation / roi information and fill empty values with empty string
-            customdata = group[hoverinfo]
+            customdata = group[config["HOVERINFO"]]
             numeric_col = customdata.select_dtypes("float64").columns
             customdata.loc[:, numeric_col] = customdata.select_dtypes(
                 "float64"
@@ -209,7 +249,7 @@ def plot_from_data(
         # if selected label is numeric
 
         # get hoverinformation
-        customdata = df[hoverinfo]
+        customdata = df[config["HOVERINFO"]]
         numeric_col = customdata.select_dtypes("float64").columns
         customdata.loc[:, numeric_col] = customdata.select_dtypes(
             "float64"
@@ -260,94 +300,91 @@ def plot_from_data(
     return fig
 
 
-# Decide Hover Information to Show
-hoverinfo = [
-    "Disease Group",
-    "age",
-    "sex",
-    "race",
-    "lung_weight_grams",
-    "days_of_disease",
-    "days_in_hospital",
-    "roi",
-]
+@cache.memoize(timeout=300)
+def get_cxy_array(img_name: str, channels: List[int]) -> Array:
+    """Get CXY image array in a cached manner."""
+    res = parmap.starmap_async(
+        fetch_array,
+        zip([img_name] * len(channels), roi2channel.loc[list(channels)]),
+    )
 
-# Decide Labels to Use from Overall Dataframe
-col_interest = [
-    "roi",
-    "0",
-    "1",
-    "age",
-    "sex",
-    "race",
-    "smoker",
-    "disease",
-    "Disease Group",
-    "classification",
-    "cause_of_death",
-    "lung_weight_grams",
-    "comorbidities",
-    "treatment",
-    "days_intubated",
-    "days_of_disease",
-    "days_in_hospital",
-    "fever_temperature_celsius",
-    "cough",
-    "shortness_of_breath",
-    "Other lung lesions",
-    "PLT/mL",
-    "D-dimer (mg/L)",
-    "WBC",
-    "LY%",
-    "PMN %",
-]
+    # In serial:
+    # return np.asarray(
+    #     [fetch_array(img_name, roi2channel.loc[ch]) for ch in channels]
+    # )
+    return np.asarray(res.get())
+
+
+@cache.memoize(timeout=300)
+def fetch_array(sample_name: str, channel: str) -> Optional[Array]:
+    """Get a single array image for a channel in a cached manner."""
+    name = f"{sample_name}.{channel}"
+    if name in roi2url:
+        req_url = roi2url[name]["shared_download_url"]
+        print(f"Downloading: {sample_name}, {channel} at {now(False)}")
+
+        res = requests.get(req_url)
+        print(f"Download Completed: {sample_name}, {channel} at {now(False)}")
+
+        res.raise_for_status()
+
+        img = np.load(_BytesIO(res.content))["array"]
+
+        return img
+    print(f"Could not find '{name}' in database.")
+    return None
+
+
+# Default figure to display
+# Empty Figure Layout
+def get_empty_fig():
+    return {
+        "data": [],
+        "layout": go.Layout(
+            xaxis={
+                "showticklabels": False,
+                "ticks": "",
+                "showgrid": False,
+                "zeroline": False,
+            },
+            yaxis={
+                "showticklabels": False,
+                "ticks": "",
+                "showgrid": False,
+                "zeroline": False,
+            },
+            template="plotly_dark",
+        ),
+    }
+
+
+def get_default_figure() -> Fig:
+    if DEFAULT_FIGURE == (None, None):
+        def_fig = get_empty_fig()
+    else:
+        output = get_cxy_array(DEFAULT_FIGURE[0], DEFAULT_FIGURE[1])
+        output = output.transpose((-1, 1, 0))
+        if output.shape[0] > output.shape[1]:
+            output = output.transpose((1, 0, 2))
+
+        def_fig = px.imshow(output)
+        def_fig.update_xaxes(showticklabels=False, showgrid=False)
+        def_fig.update_yaxes(showticklabels=False, showgrid=False)
+        def_fig.update_layout(
+            coloraxis_showscale=False,
+            margin=dict(l=0, r=0, t=0, b=0),
+            template="plotly_dark",
+        )
+    return def_fig
+
 
 # Hover Information Template
 custom_hovertemplate = "<br>".join(
     [
         "" + col.capitalize() + ": %{customdata[" + str(i) + "]}"
-        for i, col in enumerate(hoverinfo)
+        for i, col in enumerate(config["HOVERINFO"])
     ]
 )
-
-# the style arguments for the sidebar. We use position:fixed and a fixed width
-SIDEBAR_STYLE = {
-    "position": "fixed",
-    "top": 0,
-    "left": 0,
-    "bottom": 0,
-    "width": "27rem",
-    "padding": "2rem 1rem",
-    "background-color": "#111111",
-}
-
-# the styles for the main content position it to the right of the sidebar and
-# add some padding.
-CONTENT_STYLE = {
-    "margin-left": "30rem",
-    "margin-right": "2rem",
-    "padding": "2rem 1rem",
-}
-
-# Empty Figure Layout
-empty_fig = {
-    "data": [],
-    "layout": go.Layout(
-        xaxis={
-            "showticklabels": False,
-            "ticks": "",
-            "showgrid": False,
-            "zeroline": False,
-        },
-        yaxis={
-            "showticklabels": False,
-            "ticks": "",
-            "showgrid": False,
-            "zeroline": False,
-        },
-        template="plotly_dark",
-    ),
-}
 
 
 # Initialize app
@@ -360,28 +397,16 @@ app = dash.Dash(
 server = app.server
 
 # Add Cache to Server
-cache_dir = tempfile.TemporaryDirectory().name
-print(f"Caching to '{cache_dir}'.")
-cache = Cache(
-    server,
-    config={
-        "CACHE_DIR": cache_dir,
-        "CACHE_TYPE": "filesystem",
-        # should be equal to maximum number of users on the app at a single time
-        # higher numbers will store more data in the filesystem / redis cache
-        "CACHE_THRESHOLD": 25,
-        "CACHE_DEFAULT_TIMEOUT": 300,
-    },
-)
+cache.init_app(app.server)
+print(f"Caching to '{cache.config['CACHE_DIR']}'.")
+
 
 #### Load data ####
-APP_PATH = Path(__file__).parent.resolve().as_posix()
-
 # load pca plot information
-pcs = pd.read_csv(Path(APP_PATH) / "data" / "pcadata.csv")
-pcs = pcs[col_interest]
+pcs = pd.read_csv(APP_PATH / "data" / "pcadata.csv")
+pcs = pcs[config["col_interest"]]
 
-loadings = pd.read_csv(Path(APP_PATH) / "data" / "loadings.csv", index_col=0)
+loadings = pd.read_csv(APP_PATH / "data" / "loadings.csv", index_col=0)
 
 for col, dtype in zip(pcs.columns, pcs.dtypes):
     if dtype == "O":
@@ -422,14 +447,14 @@ fig.update_layout(clickmode="event+select")
 
 # load options for dropdown box
 color_options = []
-for label in col_interest[3:]:
+for label in config["col_interest"][3:]:
     color_options.append(
         {"label": label.capitalize().replace("_", " "), "value": label}
     )
 
 # load image metadata from JSON
-roi2url = json.load(open(URL_INFO, "r"))
-roi2channel = pd.Series(json.load(open(CHANNEL_INFO, "r")))
+roi2url = json.load(open(config["URL_INFO"], "r"))
+roi2channel = pd.Series(json.load(open(config["CHANNEL_INFO"], "r")))
 
 channel_options = []
 for value, label in enumerate(roi2channel):
@@ -466,21 +491,27 @@ sidebar = html.Div(
                             "Red:", style={"color": "red", "margin-left": "5px"}
                         ),
                         dcc.Dropdown(
-                            options=channel_options, id="red", value=1
+                            options=channel_options,
+                            id="red",
+                            value=config["DEFAULT_CHANNELS"][0],
                         ),
                         html.H5(
                             "Green:",
                             style={"color": "green", "margin-left": "5px"},
                         ),
                         dcc.Dropdown(
-                            options=channel_options, id="green", value=28
+                            options=channel_options,
+                            id="green",
+                            value=config["DEFAULT_CHANNELS"][1],
                         ),
                         html.H5(
                             "Blue:",
                             style={"color": "blue", "margin-left": "5px"},
                         ),
                         dcc.Dropdown(
-                            options=channel_options, id="blue", value=10
+                            options=channel_options,
+                            id="blue",
+                            value=config["DEFAULT_CHANNELS"][2],
                         ),
                     ],
                     style={"padding": "10px"},
@@ -488,7 +519,7 @@ sidebar = html.Div(
             ]
         ),
     ],
-    style=SIDEBAR_STYLE,
+    style=config["SIDEBAR_STYLE"],
 )
 
 content = html.Div(
@@ -571,12 +602,16 @@ content = html.Div(
                                 html.Hr(),
                                 dcc.Graph(
                                     id="image-file-data",
-                                    figure=empty_fig,
+                                    figure=get_default_figure(),
                                     style={
                                         "width": "inherit",
                                         "height": "60vh",
                                         "align": "center",
                                     },
+                                ),
+                                html.Div(
+                                    id="application-state",
+                                    style={"display": "none"},
                                 ),
                                 dcc.Loading(
                                     id="loading-2",
@@ -618,68 +653,34 @@ content = html.Div(
             ],
         ),
     ],
-    style=CONTENT_STYLE,
+    style=config["CONTENT_STYLE"],
 )
 
 # App layout
 app.layout = html.Div([sidebar, content])
 
 
-@cache.memoize(timeout=300)
-def get_image(img_name: str, channels: List[int]) -> Array:
-    res = parmap.starmap_async(
-        fetch_array,
-        zip([img_name] * len(channels), roi2channel.loc[list(channels)]),
-    )
-
-    # In serial:
-    # return np.asarray(
-    #     [fetch_array(img_name, roi2channel.loc[ch]) for ch in channels]
-    # )
-    return np.asarray(res.get())
-
-
-# Cache Function
-@cache.memoize(timeout=300)
-def fetch_array(sample_name: str, channel: str) -> Optional[Array]:
-    name = f"{sample_name}.{channel}"
-    if name in roi2url:
-        req_url = roi2url[name]["shared_download_url"]
-        print(f"Downloading: {sample_name}, {channel} at {now()}")
-
-        res = requests.get(req_url)
-        print(f"Download Completed: {sample_name}, {channel} at {now()}")
-
-        res.raise_for_status()
-
-        img = np.load(_BytesIO(res.content))["array"]
-
-        return img
-    print(f"Could not find '{name}' in database.")
-    return None
-
-
 # Callback Functions for the App
 @app.callback(
     Output("hover-data", "children"), [Input("live-update-graph", "hoverData")]
 )
-def display_hover_data(hoverData):
+def display_hover_data(hoverData) -> Optional[str]:
     if hoverData == None:
         return None
     elif "customdata" in hoverData["points"][0]:
         return "HOVERED: {}".format(hoverData["points"][0]["customdata"][-1])
-    return
+    return None
 
 
 @app.callback(
     Output("click-data", "children"), [Input("live-update-graph", "clickData")]
 )
-def display_click_data(clickData):
+def display_click_data(clickData) -> Optional[str]:
     if clickData == None:
         return None
     elif "customdata" in clickData["points"][0]:
         return "LOADED: {}".format(clickData["points"][0]["customdata"][-1])
-    return
+    return None
 
 
 # Image Loader Function
@@ -695,24 +696,24 @@ def display_click_data(clickData):
         Input("blue", "value"),
     ],
 )
-def display_image_data(clickData, *channels: List[int]):
+def display_image_data(clickData, *channels: List[int]) -> Tuple[Fig, str]:
     start = now(False)
     # img_dir = "assets/"
     if clickData == None:
         return (
-            empty_fig,
+            get_empty_fig(),
             dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
         )
     if "customdata" not in clickData["points"][0]:
         return (
-            empty_fig,
+            get_empty_fig(),
             dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
         )
 
     img_name = clickData["points"][0]["customdata"][-1]
-    output = get_image(img_name, channels)
+    output = get_cxy_array(img_name, channels)
     if len(output.shape) != 3:
-        return empty_fig
+        return (get_empty_fig(), "")
 
     output = output.transpose((-1, 1, 0))
     if output.shape[0] > output.shape[1]:
@@ -730,28 +731,12 @@ def display_image_data(clickData, *channels: List[int]):
     end = now(False)
     print(f"Took {end - start} to update.")
 
-    return fig2, "loaded"
+    return (fig2, "")
 
 
-"""
-    if img_name in roi2url:
-
-        req_url = roi2url[img_name]["shared_download_url"]
-        res = requests.get(req_url)
-
-        res.raise_for_status()
-
-        print("Downloading: " + img_name)
-        img = np.load(_BytesIO(res.content))["stack"]
-
-        output = np.zeros(shape=(3, img.shape[1], img.shape[2]))
-        output[0] = img[red_channel]
-        output[1] = img[green_channel]
-        output[2] = img[blue_channel]
-"""
 # Multiple components can update everytime interval gets fired.
 @app.callback(Output("live-update-graph", "figure"), [Input("color", "value")])
-def update_graph_live(value):
+def update_graph_live(value) -> Fig:
     fig = plot_from_data(
         pcs, color_map=color_map, label=value, pca_loadings=loadings
     )

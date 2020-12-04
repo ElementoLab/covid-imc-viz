@@ -1,0 +1,67 @@
+{
+    "CACHE_CONFIG": {
+        "CACHE_THRESHOLD": 25,
+        "CACHE_DEFAULT_TIMEOUT": 300,
+        "CACHE_TYPE": "filesystem"
+    },
+    "URL_INFO": "metadata/processed_stack.upload_info.json",
+    "CHANNEL_INFO": "metadata/processed_stack.channel_info.json",
+    "DEFAULT_CHANNELS": [
+        1,
+        28,
+        10
+    ],
+    "DEFAULT_ROI": "20200721_COVID_30_LATE_RUN2-01",
+    "SIDEBAR_STYLE": {
+        "position": "fixed",
+        "top": 0,
+        "left": 0,
+        "bottom": 0,
+        "width": "27rem",
+        "padding": "2rem 1rem",
+        "background-color": "#111111"
+    },
+    "CONTENT_STYLE": {
+        "margin-left": "30rem",
+        "margin-right": "2rem",
+        "padding": "2rem 1rem"
+    },
+    "HOVERINFO": [
+        "Disease Group",
+        "age",
+        "sex",
+        "race",
+        "lung_weight_grams",
+        "days_of_disease",
+        "days_in_hospital",
+        "roi"
+    ],
+    "col_interest": [
+        "roi",
+        "0",
+        "1",
+        "age",
+        "sex",
+        "race",
+        "smoker",
+        "disease",
+        "Disease Group",
+        "classification",
+        "cause_of_death",
+        "lung_weight_grams",
+        "comorbidities",
+        "treatment",
+        "days_intubated",
+        "days_of_disease",
+        "days_in_hospital",
+        "fever_temperature_celsius",
+        "cough",
+        "shortness_of_breath",
+        "Other lung lesions",
+        "PLT/mL",
+        "D-dimer (mg/L)",
+        "WBC",
+        "LY%",
+        "PMN %"
+    ]
+}
