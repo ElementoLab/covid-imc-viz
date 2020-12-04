@@ -6,6 +6,8 @@
     },
     "URL_INFO": "metadata/processed_stack.upload_info.json",
     "CHANNEL_INFO": "metadata/processed_stack.channel_info.json",
+    "PCA_DATA": "data/pcadata.csv",
+    "LOADING_DATA": "data/loadings.csv",
     "DEFAULT_CHANNELS": [
         1,
         28,
@@ -25,6 +27,17 @@
         "margin-left": "30rem",
         "margin-right": "2rem",
         "padding": "2rem 1rem"
+    },
+    "CAT_ORDER": {
+        "disease": ["Healthy", "FLU", "ARDS", "COVID19"],
+        "Disease Group": [
+            "Healthy",
+            "Flu",
+            "ARDS",
+            "Pneumonia",
+            "COVID19_early",
+            "COVID19_late"
+        ]
     },
     "HOVERINFO": [
         "Disease Group",

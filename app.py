@@ -1,9 +1,7 @@
 # to dos
 #
 # Domain Rerouting
-# Image Redirection
 
-import os
 from pathlib import Path
 import re
 import json
@@ -23,7 +21,7 @@ from io import BytesIO as _BytesIO
 import requests
 import parmap
 
-import dash
+from dash import Dash
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 import dash_html_components as html
@@ -126,6 +124,15 @@ def plot_from_data(
     """
     Generate pca plot from pca dataframe with metadata.
     """
+
+    # Hover Information Template
+    custom_hovertemplate = "<br>".join(
+        [
+            "" + col.capitalize() + ": %{customdata[" + str(i) + "]}"
+            for i, col in enumerate(config["HOVERINFO"])
+        ]
+    )
+
     # create figure layout
     fig = go.Figure()
 
@@ -378,17 +385,8 @@ def get_default_figure() -> Fig:
     return def_fig
 
 
-# Hover Information Template
-custom_hovertemplate = "<br>".join(
-    [
-        "" + col.capitalize() + ": %{customdata[" + str(i) + "]}"
-        for i, col in enumerate(config["HOVERINFO"])
-    ]
-)
-
-
 # Initialize app
-app = dash.Dash(
+app = Dash(
     __name__,
     meta_tags=[
         {"name": "viewport", "content": "width=device-width, initial-scale=1.0"}
@@ -403,10 +401,10 @@ print(f"Caching to '{cache.config['CACHE_DIR']}'.")
 
 #### Load data ####
 # load pca plot information
-pcs = pd.read_csv(APP_PATH / "data" / "pcadata.csv")
+pcs = pd.read_csv(APP_PATH / config["PCA_DATA"])
 pcs = pcs[config["col_interest"]]
 
-loadings = pd.read_csv(APP_PATH / "data" / "loadings.csv", index_col=0)
+loadings = pd.read_csv(APP_PATH / config["LOADING_DATA"], index_col=0)
 
 for col, dtype in zip(pcs.columns, pcs.dtypes):
     if dtype == "O":
@@ -414,19 +412,7 @@ for col, dtype in zip(pcs.columns, pcs.dtypes):
 
 pcs = pcs.infer_objects()
 
-cat_order = {
-    "disease": ["Healthy", "FLU", "ARDS", "COVID19"],
-    "Disease Group": [
-        "Healthy",
-        "Flu",
-        "ARDS",
-        "Pneumonia",
-        "COVID19_early",
-        "COVID19_late",
-    ],
-}
-
-for cat, order in cat_order.items():
+for cat, order in config["CAT_ORDER"].items():
     pcs[cat] = pd.Categorical(pcs[cat], categories=order, ordered=True)
 
 # color mapper
