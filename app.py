@@ -49,11 +49,11 @@ Fig = Union[plotly.graph_objects.Figure]
 APP_PATH = Path(__file__).parent.resolve()
 CONFIG_FILE = "config.json"
 config = json.load(open(APP_PATH / CONFIG_FILE, "r"))
-# DEFAULT_FIGURE = (
-#     config["DEFAULT_ROI"],
-#     config["DEFAULT_CHANNELS"],
-# )  # change to (None, None) to display empty
-DEFAULT_FIGURE = (None, None)
+DEFAULT_FIGURE = (
+    config["DEFAULT_ROI"],
+    config["DEFAULT_CHANNELS"],
+)  # change to (None, None) to display empty
+# DEFAULT_FIGURE = (None, None)
 
 # Set up cache
 cache = Cache(
@@ -293,7 +293,7 @@ def plot_from_data(
                 name=component,
                 text=["Origin", component],
                 hovertemplate="%{text}",
-                opacity=0.2,
+                opacity=0.5,
                 line={"dash": "dash"},
                 textposition="bottom center",
                 showlegend=False,
@@ -344,7 +344,7 @@ def fetch_array(sample_name: str, channel: str) -> Optional[Array]:
 
 # Default figure to display
 # Empty Figure Layout
-def get_empty_fig():
+def get_empty_figure():
     return {
         "data": [],
         "layout": go.Layout(
@@ -367,7 +367,7 @@ def get_empty_fig():
 
 def get_default_figure() -> Fig:
     if DEFAULT_FIGURE == (None, None):
-        def_fig = get_empty_fig()
+        def_fig = get_empty_figure()
     else:
         output = get_cxy_array(DEFAULT_FIGURE[0], DEFAULT_FIGURE[1])
         output = output.transpose((-1, 1, 0))
@@ -588,7 +588,7 @@ content = html.Div(
                                 html.Hr(),
                                 dcc.Graph(
                                     id="image-file-data",
-                                    figure=get_default_figure(),
+                                    figure=get_empty_figure(),
                                     style={
                                         "width": "inherit",
                                         "height": "60vh",
@@ -663,10 +663,10 @@ def display_hover_data(hoverData) -> Optional[str]:
 )
 def display_click_data(clickData) -> Optional[str]:
     if clickData == None:
-        return None
+        return "LOADED (DEFAULT): {}".format(config["DEFAULT_ROI"])
     elif "customdata" in clickData["points"][0]:
         return "LOADED: {}".format(clickData["points"][0]["customdata"][-1])
-    return None
+    return "LOADED (DEFAULT): {}".format(config["DEFAULT_ROI"])
 
 
 # Image Loader Function
@@ -687,19 +687,19 @@ def display_image_data(clickData, *channels: List[int]) -> Tuple[Fig, str]:
     # img_dir = "assets/"
     if clickData == None:
         return (
-            get_empty_fig(),
+            get_default_figure(),
             dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
         )
     if "customdata" not in clickData["points"][0]:
         return (
-            get_empty_fig(),
+            get_default_figure(),
             dcc.Markdown("""**Click Any Points on PCA plot to load images**"""),
         )
 
     img_name = clickData["points"][0]["customdata"][-1]
     output = get_cxy_array(img_name, channels)
     if len(output.shape) != 3:
-        return (get_empty_fig(), "")
+        return (get_default_figure(), "")
 
     output = output.transpose((-1, 1, 0))
     if output.shape[0] > output.shape[1]:
