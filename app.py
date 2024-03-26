@@ -1,7 +1,3 @@
-# to dos
-#
-# Domain Rerouting
-
 from pathlib import Path
 import re
 import json
@@ -17,14 +13,18 @@ from typing import (
     overload,
 )
 
+import warnings
+# Suppress FutureWarning messages
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.simplefilter(action='ignore', category=RuntimeWarning)
 from io import BytesIO as _BytesIO
 import requests
 import parmap
 
 from dash import Dash
 import dash_bootstrap_components as dbc
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 from dash.dependencies import Input, Output, State
 
 import pandas as pd
@@ -38,7 +38,6 @@ import plotly.graph_objects as go
 from flask_caching import Cache
 
 pd.options.mode.chained_assignment = None
-
 
 # Some custom types
 DataFrame = Union[pd.DataFrame]
@@ -138,27 +137,27 @@ def plot_from_data(
 
     # if label is categorical
     if df[label].dtype.name == "category":
-        i = 0
+        # i = 0
 
         # get color map
         if label in color_map:
             colors = color_map[label]
         else:
             colors = color_map["default"]
-
+        print(len(colors), df[label].unique().shape)
+        print(colors, df[label].unique())
         # iterate through each category
-        for target, group in df.groupby(label):
-
+        for i, target in enumerate(df[label].unique()):
+            group = df[df[label] == target].copy()
             # skip missing values
             if target == "":
                 continue
 
             # retrieve hoverinformation / roi information and fill empty values with empty string
             customdata = group[config["HOVERINFO"]]
-            numeric_col = customdata.select_dtypes("float64").columns
-            customdata.loc[:, numeric_col] = customdata.select_dtypes(
-                "float64"
-            ).astype(str)
+            # update custom data as string dtypes
+            for numeric_col in customdata.select_dtypes("float64").columns:
+                customdata.loc[:, numeric_col] = customdata.loc[:, numeric_col].astype(str)
             customdata = customdata.replace(["", "nan"], "NA", regex=False)
 
             # add pca scatter plot
@@ -177,8 +176,8 @@ def plot_from_data(
 
             # add centroids
             fig.add_scatter(
-                x=[group.mean()["0"]],
-                y=[group.mean()["1"]],
+                x=[group["0"].mean()],
+                y=[group["1"].mean()],
                 marker_symbol="cross",
                 mode="markers",
                 legendgroup=target,
@@ -203,7 +202,6 @@ def plot_from_data(
                 opacity=0.15,
                 showlegend=False,
             )
-            i = i + 1
 
         # add missing values at the end
         group = df[df[label] == ""]
@@ -225,8 +223,8 @@ def plot_from_data(
 
             # add missing value centroid
             fig.add_scatter(
-                x=[group.mean()["0"]],
-                y=[group.mean()["1"]],
+                x=[group["0"].mean()],
+                y=[group["1"].mean()],
                 marker_symbol="cross",
                 mode="markers",
                 legendgroup=target,
@@ -401,13 +399,13 @@ print(f"Caching to '{cache.config['CACHE_DIR']}'.")
 
 #### Load data ####
 # load pca plot information
-pcs = pd.read_csv(APP_PATH / config["PCA_DATA"])
+pcs = pd.read_csv(APP_PATH / config["PCA_DATA"], index_col = 0)
 pcs = pcs[config["col_interest"]]
 
 loadings = pd.read_csv(APP_PATH / config["LOADING_DATA"], index_col=0)
 
 for col, dtype in zip(pcs.columns, pcs.dtypes):
-    if dtype == "O":
+    if dtype == "object":
         pcs[col] = pcs[col].fillna("")
 
 pcs = pcs.infer_objects()
@@ -418,7 +416,7 @@ for cat, order in config["CAT_ORDER"].items():
 # color mapper
 color_map = dict()
 color_map["Disease Group"] = [
-    px.colors.qualitative.D3[x] for x in [2, 0, 1, 5, 4, 3]
+    px.colors.qualitative.D3[x] for x in [2, 0, 1, 5, 4, 3, 6]
 ]
 color_map["disease"] = [px.colors.qualitative.D3[x] for x in [2, 0, 1, 3]]
 color_map["default"] = (
@@ -427,7 +425,6 @@ color_map["default"] = (
     + px.colors.qualitative.T10
     + px.colors.qualitative.Plotly
 )
-
 fig = plot_from_data(pcs, color_map=color_map, pca_loadings=loadings)
 fig.update_layout(clickmode="event+select")
 
